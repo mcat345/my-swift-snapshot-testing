@@ -18,7 +18,7 @@
     ///     `UITraitCollection`s default value of `0.0`, the screens scale is used.
     /// - Returns: A new diffing strategy.
     public static func image(
-      precision: Float = 1, perceptualPrecision: Float = 1, scale: CGFloat? = nil
+      precision: Float = 1, perceptualPrecision: Float = 1, allowedDifference: UInt8 = 0, scale: CGFloat? = nil
     ) -> Diffing {
       let imageScale: CGFloat
       if let scale = scale, scale != 0.0 {
@@ -33,7 +33,7 @@
       ) { old, new in
         guard
           let message = compare(
-            old, new, precision: precision, perceptualPrecision: perceptualPrecision)
+            old, new, precision: precision, perceptualPrecision: perceptualPrecision, allowedDifference: allowedDifference)
         else { return nil }
         let difference = SnapshotTesting.diff(old, new)
         let oldAttachment = XCTAttachment(image: old)
@@ -49,6 +49,14 @@
         )
       }
     }
+      
+      /// - Parameter allowedDifference: Allowed difference between color component values to assume them as match.
+      public static func image(precision: Float, allowedDifference: UInt8 = 0) -> Snapshotting {
+          return .init(
+            pathExtension: "png",
+            diffing: .image(precision: precision, allowedDifference: allowedDifference)
+          )
+      }
 
     /// Used when the image size has no width or no height to generated the default empty image
     private static func emptyImage() -> UIImage {
@@ -93,7 +101,7 @@
   private let imageContextBitsPerComponent = 8
   private let imageContextBytesPerPixel = 4
 
-  private func compare(_ old: UIImage, _ new: UIImage, precision: Float, perceptualPrecision: Float)
+  private func compare(_ old: UIImage, _ new: UIImage, precision: Float, perceptualPrecision: Float, allowedDifference: UInt8)
     -> String?
   {
     guard let oldCgImage = old.cgImage else {
@@ -130,6 +138,10 @@
     if precision >= 1, perceptualPrecision >= 1 {
       return "Newly-taken snapshot does not match reference."
     }
+      let precision = min(max(precision, 0), 1)
+        if precision == 1 && allowedDifference == 0 { return false }
+        if precision == 0 || allowedDifference == 255 { return true }
+      
     if perceptualPrecision < 1, #available(iOS 11.0, tvOS 11.0, *) {
       return perceptuallyCompare(
         CIImage(cgImage: oldCgImage),
@@ -140,15 +152,15 @@
     } else {
       let byteCountThreshold = Int((1 - precision) * Float(byteCount))
       var differentByteCount = 0
-      for offset in 0..<byteCount {
-        if oldBytes[offset] != newerBytes[offset] {
-          differentByteCount += 1
-        }
-      }
-      if differentByteCount > byteCountThreshold {
-        let actualPrecision = 1 - Float(differentByteCount) / Float(byteCount)
-        return "Actual image precision \(actualPrecision) is less than required \(precision)"
-      }
+        var differentPixelCount = 0
+        if (oldBytes[byte] != newerBytes[byte]) && (byte % 4 != 0) {  // skip alpha testing because alpha is already premultiplied
+              if allowedDifference == 0 || abs(Int(oldBytes[byte]) - Int(newerBytes[byte])) > allowedDifference {
+                differentPixelCount += 1
+                if Float(differentPixelCount) / Float(byteCount) > threshold {
+                  return false
+                }
+              }
+            }
     }
     return nil
   }
