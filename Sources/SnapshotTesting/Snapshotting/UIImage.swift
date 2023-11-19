@@ -49,14 +49,6 @@
         )
       }
     }
-      
-      /// - Parameter allowedDifference: Allowed difference between color component values to assume them as match.
-      public static func image(precision: Float, allowedDifference: UInt8 = 0) -> Snapshotting {
-          return .init(
-            pathExtension: "png",
-            diffing: .image(precision: precision, allowedDifference: allowedDifference)
-          )
-      }
 
     /// Used when the image size has no width or no height to generated the default empty image
     private static func emptyImage() -> UIImage {
@@ -139,8 +131,8 @@
       return "Newly-taken snapshot does not match reference."
     }
       let precision = min(max(precision, 0), 1)
-        if precision == 1 && allowedDifference == 0 { return false }
-        if precision == 0 || allowedDifference == 255 { return true }
+        if precision == 1 && allowedDifference == 0 { return "Newly-taken snapshot does not match reference." }
+        if precision == 0 || allowedDifference == 255 { return "Newly-taken snapshot does not match reference." }
       
     if perceptualPrecision < 1, #available(iOS 11.0, tvOS 11.0, *) {
       return perceptuallyCompare(
@@ -150,17 +142,18 @@
         perceptualPrecision: perceptualPrecision
       )
     } else {
-      let byteCountThreshold = Int((1 - precision) * Float(byteCount))
-      var differentByteCount = 0
         var differentPixelCount = 0
-        if (oldBytes[byte] != newerBytes[byte]) && (byte % 4 != 0) {  // skip alpha testing because alpha is already premultiplied
-              if allowedDifference == 0 || abs(Int(oldBytes[byte]) - Int(newerBytes[byte])) > allowedDifference {
-                differentPixelCount += 1
-                if Float(differentPixelCount) / Float(byteCount) > threshold {
-                  return false
+        let threshold = 1 - precision
+        for byte in 0..<byteCount {
+            if (oldBytes[byte] != newerBytes[byte]) && (byte % 4 != 0) {  // skip alpha testing because alpha is already premultiplied
+                if allowedDifference == 0 || abs(Int(oldBytes[byte]) - Int(newerBytes[byte])) > allowedDifference {
+                    differentPixelCount += 1
+                    if Float(differentPixelCount) / Float(byteCount) > threshold {
+                        return "Newly-taken snapshot does not match reference."
+                    }
                 }
-              }
             }
+        }
     }
     return nil
   }
